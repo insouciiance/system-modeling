@@ -6,29 +6,17 @@ public abstract class NetworkNode
 {
     protected float _currentTime;
 
+    protected int _processedCount;
+
     public string? DebugName { get; init; }
 
-    public abstract float CompletionTime { get; }
+    public abstract float GetCompletionTime();
 
-    public virtual void Begin()
-    {
-        Console.WriteLine("-----------------------------------------------");
-        Console.WriteLine($"[{DebugName}] Begin");
-        DebugPrint();
-    }
+    public virtual void Enter() { }
 
-    public virtual void End()
-    {
-        Console.WriteLine($"[{DebugName}] End");
-    }
+    public virtual void Exit() => _processedCount++;
 
-    public virtual void CurrentTimeUpdated(float currentTime)
-    {
-        _currentTime = currentTime;
-    }
+    public virtual void CurrentTimeUpdated(float currentTime) => _currentTime = currentTime;
 
-    public virtual void DebugPrint()
-    {
-        Console.WriteLine($"[{DebugName}]");
-    }
+    public virtual void DebugPrint(bool verbose = false) => Console.WriteLine(DebugName);
 }

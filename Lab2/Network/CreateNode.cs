@@ -11,21 +11,27 @@ public class CreateNode : NetworkNode
 
     private readonly IProcessingTimeProvider _timeProvider;
 
-    public override float CompletionTime => _completionTime;
-
     public CreateNode(IProcessingTimeProvider timeProvider, NetworkNode nextNode)
     {
         _timeProvider = timeProvider;
         _nextNode = nextNode;
     }
 
-    public override void Begin() => throw new NotSupportedException();
+    public override float GetCompletionTime() => _completionTime;
 
-    public override void End()
+    public override void Enter() => throw new NotSupportedException();
+
+    public override void Exit()
     {
-        base.End();
+        base.Exit();
 
         _completionTime = _currentTime + _timeProvider.GetProcessingTime();
-        _nextNode.Begin();
+        _nextNode.Enter();
+    }
+
+    public override void DebugPrint(bool verbose = false)
+    {
+        base.DebugPrint(verbose);
+        Console.WriteLine($"Created items: {_processedCount}");
     }
 }

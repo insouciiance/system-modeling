@@ -23,8 +23,8 @@ public class NetworkModel
     {
         while (_currentTime < simulationTime)
         {
-            var nextNode = _nodes.MinBy(n => n.CompletionTime)!;
-            _currentTime = nextNode.CompletionTime;
+            var nextNode = _nodes.MinBy(n => n.GetCompletionTime())!;
+            _currentTime = nextNode.GetCompletionTime();
 
             Console.WriteLine("\n*************** Current Time Update ***************");
             Console.WriteLine($"Current time: {_currentTime}");
@@ -34,8 +34,12 @@ public class NetworkModel
 
             foreach (var node in _nodes)
             {
-                if (Math.Abs(node.CompletionTime - _currentTime) < .0001f)
-                    node.End();
+                if (Math.Abs(node.GetCompletionTime() - _currentTime) < .0001f)
+                {
+                    Console.WriteLine($"Calling {node.DebugName} Exit");
+                    node.DebugPrint();
+                    node.Exit();
+                }
             }
         }
 
@@ -44,7 +48,7 @@ public class NetworkModel
         foreach (var node in _nodes)
         {
             Console.WriteLine();
-            node.DebugPrint();
+            node.DebugPrint(true);
         }
     }
 }
