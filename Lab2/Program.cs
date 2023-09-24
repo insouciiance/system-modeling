@@ -15,22 +15,22 @@ internal class Program
 
     private static NetworkModel SetupModel()
     {
-        ProcessNode process3 = new(new SingleNodeProcessor(new ConstantProcessingTimeProvider(1f)), 5)
+        ProcessNode process3 = new(new SingleNodeProcessor(new ConstantTimeProvider(1)), 5)
         {
             DebugName = "Process3"
         };
 
-        ProcessNode process2 = new(new SingleNodeProcessor(new ConstantProcessingTimeProvider(1f)), 5)
+        ProcessNode process2 = new(new SingleNodeProcessor(new ConstantTimeProvider(1)), 5)
         {
             DebugName = "Process2",
         };
 
-        ProcessNode process1 = new(new CompositeNodeProcessor(new SingleNodeProcessor(new ConstantProcessingTimeProvider(1f)), new SingleNodeProcessor(new ConstantProcessingTimeProvider(1f))), 5)
+        ProcessNode process1 = new(new SingleNodeProcessor(new ConstantTimeProvider(1)), 5)
         {
             DebugName = "Process1"
         };
 
-        CreateNode create1 = new(new ConstantProcessingTimeProvider(.9f), process1)
+        CreateNode create1 = new(new ConstantTimeProvider(1), process1)
         {
             DebugName = "Create1"
         };
