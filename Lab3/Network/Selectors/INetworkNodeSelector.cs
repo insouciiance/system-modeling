@@ -1,6 +1,6 @@
 ﻿namespace Lab3.Network.Selectors;
 
-public interface INetworkNodeSelector
+public interface INetworkNodeSelector<T>
 {
-    NetworkNode GetNext();
+    NetworkNode<T> GetNext(ref T item);
 }

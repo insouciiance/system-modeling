@@ -1,8 +1,9 @@
-﻿using Lab3.Extensions;
+﻿using System;
+using Lab3.Extensions;
 
 namespace Lab3.Network.TimeProviders;
 
-public class NormalTimeProvider : IProcessingTimeProvider
+public class NormalTimeProvider<T> : IProcessingTimeProvider<T>
 {
     private readonly float _mean;
     private readonly float _stdDev;
@@ -13,5 +14,5 @@ public class NormalTimeProvider : IProcessingTimeProvider
         _stdDev = stdDev;
     }
 
-    public float GetProcessingTime() => Random.Shared.NextGaussian() * _stdDev + _mean;
+    public float GetProcessingTime(T _) => Random.Shared.NextGaussian() * _stdDev + _mean;
 }

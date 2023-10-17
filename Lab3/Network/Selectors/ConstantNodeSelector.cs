@@ -1,10 +1,10 @@
 ﻿namespace Lab3.Network.Selectors;
 
-public class ConstantNodeSelector : INetworkNodeSelector
+public class ConstantNodeSelector<T> : INetworkNodeSelector<T>
 {
-    private readonly NetworkNode _node;
+    private readonly NetworkNode<T> _node;
 
-    public ConstantNodeSelector(NetworkNode node) => _node = node;
+    public ConstantNodeSelector(NetworkNode<T> node) => _node = node;
 
-    public NetworkNode GetNext() => _node;
+    public NetworkNode<T> GetNext(ref T _) => _node;
 }

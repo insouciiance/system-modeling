@@ -1,27 +1,31 @@
-﻿using System.Collections.Immutable;
+﻿using System;
+using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Linq;
 
 namespace Lab3.Network.Processors;
 
-public class CompositeNodeProcessor : INetworkNodeProcessor
+public class CompositeNodeProcessor<T> : INetworkNodeProcessor<T>
 {
+    public T? Current => _nodes.MinBy(n => n.CompletionTime)!.Current;
+
     public float CompletionTime => _nodes.Min(n => n.CompletionTime);
 
-    private readonly ImmutableArray<INetworkNodeProcessor> _nodes;
+    private readonly ImmutableArray<INetworkNodeProcessor<T>> _nodes;
 
-    public CompositeNodeProcessor(params INetworkNodeProcessor[] nodes)
+    public CompositeNodeProcessor(params INetworkNodeProcessor<T>[] nodes)
         : this(nodes.ToImmutableArray()) { }
 
-    public CompositeNodeProcessor(ImmutableArray<INetworkNodeProcessor> nodes)
+    public CompositeNodeProcessor(ImmutableArray<INetworkNodeProcessor<T>> nodes)
     {
         _nodes = nodes;
     }
 
-    public bool TryEnter()
+    public bool TryEnter(T item)
     {
         foreach (var node in _nodes)
         {
-            if (node.TryEnter())
+            if (node.TryEnter(item))
                 return true;
         }
 

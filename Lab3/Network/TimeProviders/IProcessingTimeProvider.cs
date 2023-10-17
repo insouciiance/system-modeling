@@ -1,6 +1,6 @@
 ﻿namespace Lab3.Network.TimeProviders;
 
-public interface IProcessingTimeProvider
+public interface IProcessingTimeProvider<T>
 {
-    float GetProcessingTime();
+    float GetProcessingTime(T item);
 }

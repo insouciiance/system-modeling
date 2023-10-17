@@ -1,31 +1,36 @@
-﻿namespace Lab3.Network;
+﻿using System;
 
-public abstract class NetworkNode
+namespace Lab3.Network;
+
+public abstract class NetworkNode<T>
 {
     protected float _currentTime;
 
-    protected int _processedCount;
-
-    public event Action? OnEnter;
-
-    public event Action? OnExit;
+    public int ProcessedCount { get; protected set; }
 
     public string? DebugName { get; init; }
 
+    public event Action<T, float>? OnEnter;
+
+    public event Action<float>? OnExit;
+
     public abstract float GetCompletionTime();
 
-    public virtual void Enter()
+    public virtual void Enter(T item)
     {
-        OnEnter?.Invoke();
+        OnEnter?.Invoke(item, _currentTime);
     }
 
     public virtual void Exit()
     {
-        OnExit?.Invoke();
-        _processedCount++;
+        OnExit?.Invoke(_currentTime);
+        ProcessedCount++;
     }
 
     public virtual void CurrentTimeUpdated(float currentTime) => _currentTime = currentTime;
 
-    public virtual void DebugPrint(bool verbose = false) => Console.WriteLine(DebugName);
+    public virtual void DebugPrint(bool verbose = false)
+    {
+        Console.WriteLine(DebugName);
+    }
 }

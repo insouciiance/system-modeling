@@ -1,17 +1,19 @@
-﻿using System.Collections.Immutable;
+﻿using System;
+using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Linq;
 
 namespace Lab3.Network.Selectors;
 
-public class WeightedNodeSelector : INetworkNodeSelector
+public class WeightedNodeSelector<T> : INetworkNodeSelector<T>
 {
-    private readonly ImmutableArray<(NetworkNode Node, float Weight)> _nodes;
+    private readonly ImmutableArray<(NetworkNode<T> Node, float Weight)> _nodes;
 
-    public WeightedNodeSelector(params (NetworkNode Node, float Weight)[] nodes) 
+    public WeightedNodeSelector(params (NetworkNode<T> Node, float Weight)[] nodes) 
         : this(nodes.ToImmutableArray())
     { }
 
-    public WeightedNodeSelector(ImmutableArray<(NetworkNode Node, float Weight)> nodes)
+    public WeightedNodeSelector(ImmutableArray<(NetworkNode<T> Node, float Weight)> nodes)
     {
         float weightsTotal = nodes.Sum(n => n.Weight);
 
@@ -21,7 +23,7 @@ public class WeightedNodeSelector : INetworkNodeSelector
         _nodes = nodes;
     }
 
-    public NetworkNode GetNext()
+    public NetworkNode<T> GetNext(ref T _)
     {
         float acc = 0;
         float rndWeight = Random.Shared.NextSingle();

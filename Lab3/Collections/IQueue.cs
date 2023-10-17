@@ -1,4 +1,6 @@
-﻿namespace Lab3.Collections;
+﻿using System.Diagnostics.CodeAnalysis;
+
+namespace Lab3.Collections;
 
 public interface IQueue<T>
 {
@@ -6,5 +8,9 @@ public interface IQueue<T>
 
     bool TryEnqueue(T item);
 
-    bool TryDequeue(out T item);
+    bool TryDequeue([MaybeNullWhen(false)] out T item);
+
+    bool TryPeek([MaybeNullWhen(false)] out T item);
+
+    void DebugPrint() { }
 }

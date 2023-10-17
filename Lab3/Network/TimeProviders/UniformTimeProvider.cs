@@ -1,6 +1,8 @@
-﻿namespace Lab3.Network.TimeProviders;
+﻿using System;
 
-public class UniformTimeProvider : IProcessingTimeProvider
+namespace Lab3.Network.TimeProviders;
+
+public class UniformTimeProvider<T> : IProcessingTimeProvider<T>
 {
     private readonly float _min;
     private readonly float _max;
@@ -11,5 +13,5 @@ public class UniformTimeProvider : IProcessingTimeProvider
         _max = max;
     }
 
-    public float GetProcessingTime() => _min + Random.Shared.NextSingle() * (_max - _min);
+    public float GetProcessingTime(T _) => _min + Random.Shared.NextSingle() * (_max - _min);
 }

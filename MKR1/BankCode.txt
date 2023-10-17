@@ -1,0 +1,570 @@
+﻿internal class Program
+{
+    static void Main(string[] args)
+    {
+        var model = CreateBank();
+        model.Simulate(1000);
+    }
+
+
+    private static NetworkModel<Client> CreateBank()
+    {
+        ClientStatRecorder recorder = new();
+
+        DisposeNode<Client> exit = new();
+        exit.OnEnter += recorder.RecordExit;
+
+        Lab3.Collections.Queue<Client> cashierQueue = new();
+        UniformTimeProvider<Client> cashierTimeProvider = new(2, 4);
+        ConstantNodeSelector<Client> cashierSelector = new(exit);
+        SingleNodeProcessor<Client> cashierChannel = new(cashierTimeProvider);
+        ProcessNode<Client> cashier = new(cashierChannel, cashierQueue)
+        {
+            NextNodeSelector = cashierSelector
+        };
+
+        LimitedQueue<Client> operatorsQueue = new(10);
+        UniformTimeProvider<Client> operatorsTimeProvider = new(2, 10);
+        ConstantNodeSelector<Client> operatorsSelector = new(cashier);
+        CompositeNodeProcessor<Client> operatorsChannels = new(
+            new SingleNodeProcessor<Client>(operatorsTimeProvider),
+            new SingleNodeProcessor<Client>(operatorsTimeProvider));
+
+        ProcessNode<Client> operators = new(operatorsChannels, operatorsQueue)
+        {
+            NextNodeSelector = operatorsSelector
+        };
+
+        operators.OnEnter += recorder.RecordEnter;
+
+        ConstantNodeSelector<Client> clientsSelector = new(operators);
+        ExponentialTimeProvider<Client> clientsTimeProvider = new(3);
+        CreateNode<Client> clients = new(
+            new ClientFactory(),
+            clientsTimeProvider,
+            clientsSelector);
+
+        NetworkModel<Client> model = new(clients, operators, cashier, exit);
+
+        model.DebugPrintExtra += () =>
+        {
+            Console.WriteLine($"Average client time in bank: {recorder.AverageClientTime}");
+        };
+
+        return model;
+    }
+}
+
+public class Client
+{
+    public Guid Id { get; } = Guid.NewGuid();
+}
+
+public class ClientStatRecorder
+{
+    private readonly Dictionary<Guid, float> _clientEntryTimes = new();
+
+    private float _cumulativeTime;
+
+    private int _clientCount;
+
+    public float AverageClientTime => _cumulativeTime / _clientCount;
+
+    public void RecordEnter(Client client, float time)
+    {
+        _clientEntryTimes.Add(client.Id, time);
+    }
+
+    public void RecordExit(Client client, float time)
+    {
+        float entryTime = _clientEntryTimes[client.Id];
+        _cumulativeTime += time - entryTime;
+        _clientCount++;
+    }
+}
+
+public class NetworkModel<T>
+{
+    private float _currentTime;
+
+    private readonly ImmutableArray<NetworkNode<T>> _nodes;
+
+    public Action? DebugPrintExtra { get; set; }
+
+    public NetworkModel(params NetworkNode<T>[] nodes)
+        : this(nodes.ToImmutableArray())
+    { }
+
+    public NetworkModel(ImmutableArray<NetworkNode<T>> nodes)
+    {
+        _nodes = nodes;
+    }
+
+    public void Simulate(float simulationTime)
+    {
+        while (_currentTime < simulationTime)
+        {
+            var nextNode = _nodes.MinBy(n => n.GetCompletionTime())!;
+            _currentTime = nextNode.GetCompletionTime();
+
+            Console.WriteLine("\n*************** Current Time Update ***************");
+            Console.WriteLine($"Updated from {nextNode.DebugName}");
+            Console.WriteLine($"Current time: {_currentTime}");
+
+            foreach (var node in _nodes)
+            {
+                node.CurrentTimeUpdated(_currentTime);
+                
+                Console.WriteLine();
+                node.DebugPrint();
+            }
+
+            foreach (var node in _nodes)
+            {
+                if (Math.Abs(node.GetCompletionTime() - _currentTime) < .0001f)
+                {
+                    Console.WriteLine($"Calling {node.DebugName} Exit");
+                    node.Exit();
+                }
+            }
+        }
+
+        Console.WriteLine("\n*************** Simulation Finished ***************");
+
+        foreach (var node in _nodes)
+        {
+            Console.WriteLine();
+            node.DebugPrint(true);
+        }
+
+        Console.WriteLine();
+        DebugPrintExtra?.Invoke();
+    }
+}
+
+public abstract class NetworkNode<T>
+{
+    protected float _currentTime;
+
+    public int ProcessedCount { get; protected set; }
+
+    public string? DebugName { get; init; }
+
+    public event Action<T, float>? OnEnter;
+
+    public event Action<float>? OnExit;
+
+    public abstract float GetCompletionTime();
+
+    public virtual void Enter(T item)
+    {
+        OnEnter?.Invoke(item, _currentTime);
+    }
+
+    public virtual void Exit()
+    {
+        OnExit?.Invoke(_currentTime);
+        ProcessedCount++;
+    }
+
+    public virtual void CurrentTimeUpdated(float currentTime) => _currentTime = currentTime;
+
+    public virtual void DebugPrint(bool verbose = false)
+    {
+        Console.WriteLine(DebugName);
+    }
+}
+
+public class CreateNode<T> : NetworkNode<T>
+{
+    private float _completionTime;
+
+    private readonly IJobFactory<T> _factory;
+    
+    private readonly IProcessingTimeProvider<T> _timeProvider;
+
+    private readonly INetworkNodeSelector<T> _nodeSelector;
+
+    private T _nextItem;
+
+    public CreateNode(
+        IJobFactory<T> factory,
+        IProcessingTimeProvider<T> timeProvider,
+        INetworkNodeSelector<T> nodeSelector,
+        float completionTime = 0)
+    {
+        _factory = factory;
+        _timeProvider = timeProvider;
+        _nodeSelector = nodeSelector;
+
+        _nextItem = _factory.Create();
+        _completionTime = completionTime;
+    }
+
+    public override float GetCompletionTime() => _completionTime;
+
+    public override void Enter(T item) => throw new NotSupportedException();
+
+    public override void Exit()
+    {
+        base.Exit();
+
+        T prev = _nextItem;
+
+        _nextItem = _factory.Create();
+        _completionTime = _currentTime + _timeProvider.GetProcessingTime(_nextItem);
+        
+        var nextNode = _nodeSelector.GetNext(ref prev);
+        nextNode.Enter(prev);
+    }
+
+    public override void DebugPrint(bool verbose = false)
+    {
+        base.DebugPrint(verbose);
+        Console.WriteLine($"Created items: {ProcessedCount}");
+    }
+}
+
+public class ProcessNode<T> : NetworkNode<T>
+{
+    private readonly INetworkNodeProcessor<T> _nodeProcessor;
+
+    public IQueue<T> Queue { get; }
+
+    public INetworkNodeSelector<T>? NextNodeSelector { get; set; }
+
+    public float QueueAverageSize => QueueWaitingTimeTotal / _currentTime;
+
+    public float QueueWaitingTimeTotal { get; private set; }
+
+    public int FailuresCount { get; private set; }
+
+    public ProcessNode(INetworkNodeProcessor<T> processor, IQueue<T> queue)
+    {
+        _nodeProcessor = processor;
+        Queue = queue;
+    }
+
+    public override float GetCompletionTime() => _nodeProcessor.CompletionTime;
+
+    public override void Enter(T item)
+    {
+        base.Enter(item);
+
+        if (_nodeProcessor.TryEnter(item))
+        {
+            Console.WriteLine($"{DebugName} Started processing");
+            return;
+        }
+
+        if (Queue.TryEnqueue(item))
+        {
+            Console.WriteLine($"{DebugName} Queued an item");
+            return;
+        }
+
+        Console.WriteLine($"{DebugName} Failure!");
+        FailuresCount++;
+    }
+
+    public override void Exit()
+    {
+        base.Exit();
+
+        var current = _nodeProcessor.Current;
+        _nodeProcessor.TryExit();
+
+        if (NextNodeSelector is not null)
+        {
+            Debug.Assert(current is not null);
+
+            var nextNode = NextNodeSelector.GetNext(ref current);
+            Console.WriteLine($"{DebugName} -> {nextNode.DebugName}");
+            nextNode.Enter(current);
+        }
+
+        if (Queue.TryPeek(out var item) && _nodeProcessor.TryEnter(item))
+        {
+            Debug.Assert(Queue.TryDequeue(out _));
+
+            Console.WriteLine($"{DebugName} Queue not empty, new item processing");
+        }
+    }
+
+    public override void CurrentTimeUpdated(float currentTime)
+    {
+        _nodeProcessor.CurrentTimeUpdated(currentTime);
+
+        float delta = currentTime - _currentTime;
+
+        QueueWaitingTimeTotal += delta * Queue.Count;
+
+        base.CurrentTimeUpdated(currentTime);
+    }
+
+    public override void DebugPrint(bool verbose = false)
+    {
+        base.DebugPrint(verbose);
+
+        StringBuilder prettyQueue = new();
+        prettyQueue.Append(new string('*', Queue.Count));
+
+        Console.WriteLine($"Queue size: {Queue.Count} ({prettyQueue})");
+        Console.WriteLine($"Failures: {FailuresCount}");
+
+        if (verbose)
+        {
+            Console.WriteLine($"Processed items: {ProcessedCount}");
+            Console.WriteLine($"Average queue size: {QueueAverageSize}");
+            Console.WriteLine($"Failure probability: {(float)FailuresCount / (FailuresCount + ProcessedCount)}");
+
+            Queue.DebugPrint();
+            _nodeProcessor.DebugPrint();
+        }
+    }
+}
+
+public class DisposeNode<T> : NetworkNode<T>
+{
+    private float _deltaTimeSum;
+
+    private float _previousEnterTime;
+
+    public float AverageDeltaTime => _deltaTimeSum / ProcessedCount;
+
+    public override float GetCompletionTime() => float.PositiveInfinity;
+
+    public override void Enter(T item)
+    {
+        base.Enter(item);
+        _deltaTimeSum += _currentTime - _previousEnterTime;
+        _previousEnterTime = _currentTime;
+
+        ProcessedCount++;
+    }
+
+    public override void Exit() => throw new InvalidOperationException();
+
+    public override void DebugPrint(bool verbose = false)
+    {
+        if (verbose)
+            Console.WriteLine($"Average delta time: {AverageDeltaTime}");
+
+        base.DebugPrint(verbose);
+    }
+}
+
+public interface IJobFactory<T>
+{
+    T Create();
+}
+
+public class ClientFactory : IJobFactory<Client>
+{
+    public Client Create() => new();
+}
+
+public interface INetworkNodeProcessor<T>
+{
+    T? Current { get; }
+
+    float CompletionTime { get; }
+
+    bool TryEnter(T item);
+
+    bool TryExit();
+
+    void CurrentTimeUpdated(float currentTime);
+
+    void DebugPrint() { }
+}
+
+public class SingleNodeProcessor<T> : INetworkNodeProcessor<T>
+{
+    private bool _processing;
+
+    private float _currentTime;
+
+    private float _workingTime;
+
+    private readonly IProcessingTimeProvider<T> _timeProvider;
+
+    public float AverageLoad => _workingTime / _currentTime;
+
+    public T? Current { get; private set; }
+
+    public float CompletionTime { get; private set; }
+
+    public SingleNodeProcessor(IProcessingTimeProvider<T> timeProvider)
+    {
+        _timeProvider = timeProvider;
+        CompletionTime = float.PositiveInfinity;
+    }
+
+    public bool TryEnter(T item)
+    {
+        if (_processing)
+            return false;
+        
+        float delay = _timeProvider.GetProcessingTime(item);
+        Current = item;
+        CompletionTime = _currentTime + delay;
+        _workingTime += delay;
+        
+        _processing = true;
+        return true;
+    }
+
+    public bool TryExit()
+    {
+        if (!_processing)
+            return false;
+        
+        _processing = false;
+        Current = default;
+        CompletionTime = float.PositiveInfinity;
+        return true;
+    }
+
+    public void CurrentTimeUpdated(float currentTime) => _currentTime = currentTime;
+
+    public void DebugPrint()
+    {
+        Console.WriteLine($"Processor average working load: {AverageLoad}");
+    }
+}
+
+public class CompositeNodeProcessor<T> : INetworkNodeProcessor<T>
+{
+    public T? Current => _nodes.MinBy(n => n.CompletionTime)!.Current;
+
+    public float CompletionTime => _nodes.Min(n => n.CompletionTime);
+
+    private readonly ImmutableArray<INetworkNodeProcessor<T>> _nodes;
+
+    public CompositeNodeProcessor(params INetworkNodeProcessor<T>[] nodes)
+        : this(nodes.ToImmutableArray()) { }
+
+    public CompositeNodeProcessor(ImmutableArray<INetworkNodeProcessor<T>> nodes)
+    {
+        _nodes = nodes;
+    }
+
+    public bool TryEnter(T item)
+    {
+        foreach (var node in _nodes)
+        {
+            if (node.TryEnter(item))
+                return true;
+        }
+
+        return false;
+    }
+
+    public bool TryExit()
+    {
+        foreach (var node in _nodes)
+        {
+            if (Math.Abs(node.CompletionTime - CompletionTime) < 0.0001f)
+                return node.TryExit();
+        }
+
+        throw new UnreachableException();
+    }
+
+    public void CurrentTimeUpdated(float currentTime)
+    {
+        foreach (var node in _nodes)
+            node.CurrentTimeUpdated(currentTime);
+    }
+}
+
+public interface INetworkNodeSelector<T>
+{
+    NetworkNode<T> GetNext(ref T item);
+}
+
+public class ConstantNodeSelector<T> : INetworkNodeSelector<T>
+{
+    private readonly NetworkNode<T> _node;
+
+    public ConstantNodeSelector(NetworkNode<T> node) => _node = node;
+
+    public NetworkNode<T> GetNext(ref T _) => _node;
+}
+
+public interface IProcessingTimeProvider<T>
+{
+    float GetProcessingTime(T item);
+}
+
+public class ExponentialTimeProvider<T> : IProcessingTimeProvider<T>
+{
+    private readonly float _mean;
+
+    public ExponentialTimeProvider(float mean) => _mean = mean;
+
+    public float GetProcessingTime(T _)
+    {
+        float rnd = Random.Shared.NextSingle();
+
+        if (rnd == 0)
+            rnd = float.Epsilon;
+        
+        return -_mean * MathF.Log(rnd);
+    }
+}
+
+public class UniformTimeProvider<T> : IProcessingTimeProvider<T>
+{
+    private readonly float _min;
+    private readonly float _max;
+
+    public UniformTimeProvider(float min, float max)
+    {
+        _min = min;
+        _max = max;
+    }
+
+    public float GetProcessingTime(T _) => _min + Random.Shared.NextSingle() * (_max - _min);
+}
+
+public interface IQueue<T>
+{
+    int Count { get; }
+
+    bool TryEnqueue(T item);
+
+    bool TryDequeue([MaybeNullWhen(false)] out T item);
+
+    bool TryPeek([MaybeNullWhen(false)] out T item);
+
+    void DebugPrint() { }
+}
+
+public class Queue<T> : IQueue<T>
+{
+    private readonly BCL.Queue<T> _queue = new();
+
+    public int Count => _queue.Count;
+
+    public virtual bool TryEnqueue(T item)
+    {
+        _queue.Enqueue(item);
+        return true;
+    }
+
+    public virtual bool TryDequeue([MaybeNullWhen(false)] out T item) => _queue.TryDequeue(out item);
+
+    public virtual bool TryPeek([MaybeNullWhen(false)] out T item) => _queue.TryPeek(out item);
+}
+
+public sealed class LimitedQueue<T> : Queue<T>
+{
+    private readonly int _maxSize;
+
+    public LimitedQueue(int maxSize) => _maxSize = maxSize;
+
+    public override bool TryEnqueue(T item) => Count < _maxSize && base.TryEnqueue(item);
+}
+

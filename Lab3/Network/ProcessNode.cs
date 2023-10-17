@@ -1,69 +1,74 @@
-﻿using System.Text;
+﻿using System;
+using System.Diagnostics;
+using System.Text;
+using Lab3.Collections;
 using Lab3.Network.Processors;
 using Lab3.Network.Selectors;
 
 namespace Lab3.Network;
 
-public class ProcessNode : NetworkNode
+public class ProcessNode<T> : NetworkNode<T>
 {
-    private int _failures;
+    private readonly INetworkNodeProcessor<T> _nodeProcessor;
 
-    private float _queueAverageDividend;
+    public IQueue<T> Queue { get; }
 
-    private readonly int _maxQueueSize;
+    public INetworkNodeSelector<T>? NextNodeSelector { get; set; }
 
-    private readonly INetworkNodeProcessor _nodeProcessor;
+    public float QueueAverageSize => QueueWaitingTimeTotal / _currentTime;
 
-    public int QueueSize { get; set; }
+    public float QueueWaitingTimeTotal { get; private set; }
 
-    public INetworkNodeSelector? NextNodeSelector { get; set; }
+    public int FailuresCount { get; private set; }
 
-    public ProcessNode(INetworkNodeProcessor processor, int maxQueueSize)
+    public ProcessNode(INetworkNodeProcessor<T> processor, IQueue<T> queue)
     {
         _nodeProcessor = processor;
-        _maxQueueSize = maxQueueSize;
+        Queue = queue;
     }
 
     public override float GetCompletionTime() => _nodeProcessor.CompletionTime;
 
-    public override void Enter()
+    public override void Enter(T item)
     {
-        base.Enter();
+        base.Enter(item);
 
-        if (_nodeProcessor.TryEnter())
+        if (_nodeProcessor.TryEnter(item))
         {
             Console.WriteLine($"{DebugName} Started processing");
             return;
         }
 
-        if (QueueSize < _maxQueueSize)
+        if (Queue.TryEnqueue(item))
         {
             Console.WriteLine($"{DebugName} Queued an item");
-
-            QueueSize++;
             return;
         }
 
         Console.WriteLine($"{DebugName} Failure!");
-        _failures++;
+        FailuresCount++;
     }
 
     public override void Exit()
     {
         base.Exit();
 
+        var current = _nodeProcessor.Current;
         _nodeProcessor.TryExit();
 
         if (NextNodeSelector is not null)
         {
-            var nextNode = NextNodeSelector.GetNext();
+            Debug.Assert(current is not null);
+
+            var nextNode = NextNodeSelector.GetNext(ref current);
             Console.WriteLine($"{DebugName} -> {nextNode.DebugName}");
-            nextNode.Enter();
+            nextNode.Enter(current);
         }
 
-        if (QueueSize > 0 && _nodeProcessor.TryEnter())
+        if (Queue.TryPeek(out var item) && _nodeProcessor.TryEnter(item))
         {
-            QueueSize--;
+            Debug.Assert(Queue.TryDequeue(out _));
+
             Console.WriteLine($"{DebugName} Queue not empty, new item processing");
         }
     }
@@ -74,10 +79,9 @@ public class ProcessNode : NetworkNode
 
         float delta = currentTime - _currentTime;
 
-        _queueAverageDividend += delta * QueueSize;
+        QueueWaitingTimeTotal += delta * Queue.Count;
 
         base.CurrentTimeUpdated(currentTime);
-
     }
 
     public override void DebugPrint(bool verbose = false)
@@ -85,19 +89,19 @@ public class ProcessNode : NetworkNode
         base.DebugPrint(verbose);
 
         StringBuilder prettyQueue = new();
-        prettyQueue.Append(new string('*', QueueSize));
+        prettyQueue.Append(new string('*', Queue.Count));
 
-        if (QueueSize < _maxQueueSize)
-            prettyQueue.Append(new string('.', _maxQueueSize - QueueSize));
-
-        Console.WriteLine($"Queue size: {QueueSize} ({prettyQueue})");
-        Console.WriteLine($"Failures: {_failures}");
+        Console.WriteLine($"Queue size: {Queue.Count} ({prettyQueue})");
+        Console.WriteLine($"Failures: {FailuresCount}");
 
         if (verbose)
         {
-            Console.WriteLine($"Processed items: {_processedCount}");
-            Console.WriteLine($"Average queue size: {_queueAverageDividend / _currentTime}");
-            Console.WriteLine($"Failure probability: {(float)_failures / (_failures + _processedCount)}");
+            Console.WriteLine($"Processed items: {ProcessedCount}");
+            Console.WriteLine($"Average queue size: {QueueAverageSize}");
+            Console.WriteLine($"Failure probability: {(float)FailuresCount / (FailuresCount + ProcessedCount)}");
+
+            Queue.DebugPrint();
+            _nodeProcessor.DebugPrint();
         }
     }
 }

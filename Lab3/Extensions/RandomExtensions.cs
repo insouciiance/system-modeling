@@ -1,4 +1,6 @@
-﻿namespace Lab3.Extensions;
+﻿using System;
+
+namespace Lab3.Extensions;
 
 public static class RandomExtensions
 {

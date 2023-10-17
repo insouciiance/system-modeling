@@ -1,30 +1,41 @@
-﻿using Lab3.Network.TimeProviders;
+﻿using System;
+using Lab3.Network.TimeProviders;
 
 namespace Lab3.Network.Processors;
 
-public class SingleNodeProcessor : INetworkNodeProcessor
+public class SingleNodeProcessor<T> : INetworkNodeProcessor<T>
 {
-    public float CompletionTime { get; private set; }
- 
     private bool _processing;
 
     private float _currentTime;
 
-    private readonly IProcessingTimeProvider _timeProvider;
+    private float _workingTime;
 
-    public SingleNodeProcessor(IProcessingTimeProvider timeProvider)
+    private readonly IProcessingTimeProvider<T> _timeProvider;
+
+    public float AverageLoad => _workingTime / _currentTime;
+
+    public T? Current { get; private set; }
+
+    public float CompletionTime { get; private set; }
+
+    public SingleNodeProcessor(IProcessingTimeProvider<T> timeProvider)
     {
         _timeProvider = timeProvider;
         CompletionTime = float.PositiveInfinity;
     }
 
-    public bool TryEnter()
+    public bool TryEnter(T item)
     {
         if (_processing)
             return false;
         
+        float delay = _timeProvider.GetProcessingTime(item);
+        Current = item;
+        CompletionTime = _currentTime + delay;
+        _workingTime += delay;
+        
         _processing = true;
-        CompletionTime = _currentTime + _timeProvider.GetProcessingTime();
         return true;
     }
 
@@ -34,9 +45,15 @@ public class SingleNodeProcessor : INetworkNodeProcessor
             return false;
         
         _processing = false;
+        Current = default;
         CompletionTime = float.PositiveInfinity;
         return true;
     }
 
     public void CurrentTimeUpdated(float currentTime) => _currentTime = currentTime;
+
+    public void DebugPrint()
+    {
+        Console.WriteLine($"Processor average working load: {AverageLoad}");
+    }
 }
