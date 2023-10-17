@@ -7,7 +7,7 @@ internal class Program
 {
     public static void Main(string[] args)
     {
-        var model = BankHelper.CreateModel();
-        model.Simulate(100);
+        var model = HospitalHelper.CreateModel();
+        model.Simulate(1000);
     }
 }

@@ -12,6 +12,8 @@ public static class BankHelper
 {
     public static NetworkModel<int> CreateModel()
     {
+        WindowTimeRecorder recorder = new();
+
         WindowTimeProvider windowTimeProvider = new(
             new NormalTimeProvider<int>(1, 0.3f),
             new ExponentialTimeProvider<int>(0.3f));
@@ -48,6 +50,9 @@ public static class BankHelper
             NextNodeSelector = new ConstantNodeSelector<int>(exit)
         };
 
+        window1.OnExit += recorder.RecordEnter;
+        window2.OnExit += recorder.RecordEnter;
+
         BankWindowSelector<int> windowSelector = new(window1, window2);
 
         ExponentialTimeProvider<int> carTimeProvider = new(0.5f);
@@ -79,6 +84,11 @@ public static class BankHelper
             float totalTimeInBank = window1.QueueWaitingTimeTotal + window2.QueueWaitingTimeTotal + windowTimeDecorator.TotalProcessingTime;
             float avgTimeInBank = totalTimeInBank / cars.ProcessedCount;
             Console.WriteLine($"Average time spent in bank: {avgTimeInBank}");
+        };
+
+        model.DebugPrintExtra += () =>
+        {
+            Console.WriteLine($"Average time between window leaves: {recorder.AverageDelta}");
         };
 
         return model;
